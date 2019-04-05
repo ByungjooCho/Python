@@ -1,0 +1,717 @@
+---
+title: "House Sales in King County Regression Analysis"
+author: "알다방- 조병주, 김동규, 변정현"
+date: "8/9/2018"
+output: html_document
+---
+
+# **목차**
+> 0. 준비사항
+> 1. 변수 설명
+> 2. 데이터 전처리 과정
+> 3. 모델 생성
+> 4. 검증
+
+<br>
+<br>
+
+## 0. 준비사항
+### 데이터 불러오기
+`Kaggle 주소 : https://www.kaggle.com/harlfoxem/housesalesprediction/kernels`
+
+<br>
+
+#### 분석 목표 : 워싱턴 주 King County 내 부동산 거래 가격 예측
+
+
+```{r 1}
+data <- read.csv("kc_house_data.csv")
+head(data)
+dim(data)
+colnames(data)
+```
+
+### Including Plots
+
+<br>
+
+## **1. 변수 설명**
+
+```{r 2, echo=FALSE}
+colnames(data)
+
+```
+
+| 종속변수 |   |
+| -------- | ------ |
+| price | 예측해야하는 부동산 거래 가격 (종속변수)
+
+<br>
+
+
+| 독립변수 |     |
+| -------- | ----- |
+| id | 집 구분자
+| date | 집이 판매된 날짜
+| bedrooms | 집 방의 개수
+| bathrooms | 집 욕실 개수
+| sqft_living | 집 거실 크기
+| sqft_lot | 부지 크기
+| floors | 층의 개수
+| waterfront | 해안쪽에 있는 집(1이면 해안, 0이면 없음)
+| view | 조망의 수
+| condition | 전체적인 집 상태
+| grade | King County grading system에 의한 전체적인 집의 등급
+| sqft_above | 지하실을 제외한 집의 크기
+| sqft_basement | 지하실의 크기
+| yr_built | 짓어진 년도
+| yr_renovated | 개조한 년도
+| zipcodezip | 우편번호
+| lat | 위도
+| long | 경도
+| sqft_living15 | 2015년도 거실의 크기(몇몇의 개조된 집이 포함됨) 부지에 영향을 줬을수도 안 줬을수도 있다.
+| sqft_lot15 | 2015년 부지 크기(몇몇의 집들은 개조됨)
+
+
+<br>
+<br>
+
+
+
+
+## **2. 데이터 전처리 과정**
+
+```{r 3, echo=FALSE}
+# 종속변수 price가 왼쪽으로 몰려있다. 
+hist(data$price)
+```
+
+>> log변환을 통해 scaling을 하여 표준화
+
+```{r 4, echo=FALSE}
+data$price <- log(data$price)
+hist(data$price)
+```
+
+<br>
+<br>
+
+---
+
+## **3. 모델 생성 과정**
+### 3-1. 변수선택
+#### 3-1-1. 상관관계 분석
+```{r 5, echo=FALSE}
+data$id <- NULL
+data$date <- NULL
+ncol(data)
+
+library(corrplot)
+corr = cor(data[1:dim(data)[2]])
+corrplot::corrplot(corr, method = "color",tl.col = "black", addCoef.col = "black", number.digits = 2, 
+                   number.cex = 0.5, tl.cex = 0.9, cl.cex = 1, 
+                   col = colorRampPalette(c("green4","white","pink"))(100))
+```
+
+#### 상관계수 0.5이상
+* bathrooms : 0.55
+* sqft_living : 0.7
+* grade : 0.7
+* sqft_above : 0.6
+* sqft_living15 : 0.62
+
+
+#### 상관계수 0.3 이상
+* bedrooms : 0.34
+* sqft_basement : 0.32
+* lat : 0.45
+
+
+```{r 6, echo=FALSE}
+# 상관계수 0.1이하 삭제(zipcode는 제외)
+data$sqft_lot <-  NULL
+data$condition <-  NULL
+# data$yr_built <- NULL
+data$long <-  NULL
+data$sqft_lot15 <-  NULL
+```
+
+<br>
+*상관계수가 0.1이하인 변수는 삭제하여 최종 선택된 변수는 다음과 같다.*
+
+
+```{r 7, echo=FALSE}
+# 독립변수는 19개에서 14개로 감소
+colnames(data)
+```
+
+---
+
+#### 상관계수가 0.3 이상인 변수들의 실제 영향력을 확인
+`(1) bedrooms`
+
+```{r 8, echo=FALSE}
+# 1. bedrooms
+library(ggplot2)
+options(scipen=100)
+
+ggplot(data = data, aes(x = bedrooms, y = price)) + 
+  geom_point(color='black') +
+  geom_smooth(method = "lm", color = "red", se = F)
+
+# bedrooms 11, 33인 관측치 제거
+subset(data, data$bedrooms > 10)
+# bedrooms에서 이상치 제거
+data <- data[data$bedrooms <= 10,]
+unique(data$bedrooms)
+```
+
+
+<br>
+
+`(2) bathrooms`
+
+```{r 9, echo=FALSE}
+# 2. bathrooms
+ggplot(data = data, aes(x = bathrooms, y = price)) + 
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE, color = "red")
+
+
+```
+
+
+
+<br>
+
+`(3) sqrt_living / sqft_living15`
+
+```{r 10, echo=FALSE}
+# 3. sqft_living
+ggplot(data = data, aes(x = sqft_living, y = price)) + 
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE, color = "red")
+
+# # (3-1) sqrt_living15
+# ggplot(data = data, aes(x = sqft_living15, y = price)) + 
+#   geom_point(color='black') +
+#   geom_smooth(method = "lm", se = FALSE, color = "red")
+# 
+# quantile(data$sqft_living)
+# quantile(data$sqft_living15)
+data$sqft_living15 <- NULL
+
+# sqft_living변수와 sqft_living15는 기본적으로 집의 면적을 나타내며, 다른점은 측정연도만이 다르고 평균값이 차이가 많이 나지 않으므로 거의 비슷한 변수라고 볼 수 있음, sqft_living15 삭제
+
+
+```
+> 변수 삭제
+
+```{r}
+
+```
+> sqft_living변수와 sqft_living15는 기본적으로 집의 면적을 나타내며, 다른점은 측정연도만이 다르고 평균값이 차이가 많이 나지 않으므로 거의 비슷한 변수라고 볼 수 있음, sqft_living15 삭제
+<br>
+
+`(4) floors`
+
+```{r 11, echo=TRUE}
+# 4. floors
+boxplot(price ~ floors, data = data, main = "Price vs floors")
+ggplot(data = data, aes(x = floors, y = price)) + 
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE, color = "red")
+
+aggregate(price~floors,data,mean)
+```
+
+```{r 12, echo=FALSE}
+ggplot(data = data, aes(x = floors, y = price)) + 
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE, color = "red")
+```
+
+#### 층수별 평균가격 확인
+
+```{r 13, echo=FALSE}
+# 층수별 평균 가격 확인
+aggregate(price~floors,data,mean)
+    
+```
+
+
+#### 더미변수 생성 (1층 or 2층 이상)
+```{r 14, echo=FALSE}
+
+# 복층 여부파악하기 위해 더미 변수 생성(1층 or 2층 이상)
+
+# data$firstfloor <- ifelse(data$floors == 1, 0, 1)
+# ggplot(data = data, aes(x = firstfloor, y = price)) + 
+#   geom_point(color='black') +
+#   geom_smooth(method = "lm", se = FALSE, color = "red")
+# 
+# cor.test(data$price, data$floors)
+# cor.test(data$price, data$firstfloor)
+# 
+# aggregate(price~floors,data,mean)
+# aggregate(price~firstfloor,data,mean)
+
+# data$firstfloor <- NULL
+
+# 더비 변수 후에도 상관계수차이와 평균 가격차이가 거의 없음
+# 오히려 상관계수가 낮아짐
+# 원래의 floor 변수 사용
+
+
+```
+> 복층일 수록 가격이 내려감
+> 원래의 floors 변수 사용
+
+
+`(5) waterfront`
+```{r 15, echo=FALSE}
+# 5. waterfront
+boxplot(price ~ waterfront, data, main = "Price vs waterfront")
+
+aggregate(price~waterfront, data, mean)
+cor.test(data$price, data$waterfront)
+nrow(subset(data,waterfront==1)) # 163개
+nrow(subset(data,waterfront==0)) # 21448개
+
+aov_waterfront <- aov(price ~ waterfront, data = data)
+summary(aov_waterfront)
+
+```
+
+
+
+`(6) view`
+
+```{r 16, echo=FALSE}
+# 6. view
+boxplot(price ~ view, data, main = "Price vs view")
+ggplot(data = data, aes(x = view, y = price)) + 
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE, color = "green")
+
+cor.test(data$price, data$view)
+# data$view_f <- as.factor(data$view)
+# aov_view <- aov(price ~ view_f, data = data)
+# summary(aov_view)
+# TukeyHSD(aov_view)
+# data$view_f <- NULL
+```
+
+
+`(7) grade`
+
+```{r 17, echo=FALSE}
+# 7. grade
+boxplot(price ~ grade, data, main = "Price vs grade")
+ggplot(data = data, aes(x = grade, y = price)) + 
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE, color = "green")
+
+cor.test(data$price, data$grade)
+# data$grade_f <- as.factor(data$grade)
+# aov_grade <- aov(price ~ grade_f, data = data)
+# summary(aov_grade)
+# TukeyHSD(aov_grade)
+# data$grade_f <- NULL
+
+
+```
+
+
+`(8) sqft_above`
+
+```{r 18, echo=FALSE}
+# 8. sqft_above
+boxplot(price ~ sqft_above, data,main = "Price vs sqft_above")
+ggplot(data = data, aes(x = sqft_above, y = price)) +
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE, color = "pink")
+
+
+# 삭제
+# sqft_living = sqft_above + sqft_basement
+data$sqft_above <- NULL
+```
+> 변수 삭제
+
+
+`(9) sqft_basement`
+
+```{r 19, echo=FALSE}
+# 9. sqft_basement
+boxplot(price ~ sqft_basement, data,main = "Price vs sqft_basement")
+ggplot(data = data, aes(x = sqft_basement, y = price)) +
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE, color = "pink")
+
+data$sqft_basement <- NULL
+```
+
+> 변수 삭제
+
+`(10) yr_built`
+
+```{r 20, echo=FALSE}
+# 10. yr_built
+boxplot(price~ yr_built, data ,main = "Price vs yr.built")
+ggplot(data = data, aes(x = yr_built, y = price)) + 
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE, color = "purple")
+
+data$yr_built <- NULL
+```
+
+> 변수 삭제
+
+`(11) yr_renovated`
+
+```{r 21, echo=FALSE}
+# 11. yr_renovated
+boxplot(price ~ yr_renovated, data, main = "Price vs yr.renovated")
+ggplot(data = data, aes(x = yr_renovated, y = price)) + 
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE)
+
+data$yr_renovated <- NULL
+```
+
+> 변수 삭제
+
+
+
+`(12) lat`
+
+```{r 22, echo=FALSE}
+# 12. lat
+cor.test(data$price, data$lat)
+boxplot(price ~ lat, data, main = "Price vs lat")
+ggplot(data = data, aes(x = lat, y = price)) + 
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+
+`(13) zipcode`
+
+```{r 23, echo=FALSE}
+# 13. zipcode
+boxplot(price ~ zipcode, data, main = "Price vs zipcode")
+ggplot(data = data, aes(x = zipcode, y = price)) + 
+  geom_point(color='black') +
+  geom_smooth(method = "lm", se = FALSE)
+
+```
+
+#### zipcode 소득분위로 범주 분할
+`(13-1) zipcode 소득분위범주 분할`
+
+```{r 24, echo=FALSE}
+library(rvest)
+library(data.table)
+
+url = "https://www.incomebyzipcode.com/washington/"
+
+list <- c()
+a <- levels(as.factor(sort(data$zipcode)))
+
+for(i in a[1:70]){
+    page_url = paste0(url, i)
+    # URL을 통해서 HTML 정보를 불러오기
+    html_zipcode <- read_html(page_url)
+    # Class가 title인 부분에서 안에있는 a태그에 해당하는 내용을 추출
+    html_zipcode %>% html_node(".hilite")
+    # 해당 태그에 있는 text만을 추출
+    list <- c(list, html_zipcode %>% html_node(".hilite") %>% html_text())
+}
+
+list
+medianincome <- list
+medianincome <- substr(list,2,8)
+str(medianincome)
+
+income <- NULL
+tmp <- unlist(strsplit(medianincome, ","))
+for(i in seq(from = 1, to = length(tmp), by=2)){
+  tmp1 <- paste0(tmp[i], tmp[i+1])
+  income <- c(income, tmp1)
+}
+
+income <- as.numeric(income)
+zipcodeincome <- as.data.table(a)
+zipcodeincome$income <- income
+summary(zipcodeincome$income)
+
+quantile(zipcodeincome$income, probs = c(0.3,0.7,0.9))
+zipcodeincome$class <- ifelse(zipcodeincome$income <= 73695 , "poor", 
+                              ifelse(zipcodeincome$income > 73695 & zipcodeincome$income <= 100879.2, "middle",
+                                     ifelse(zipcodeincome$income >100879.2  & zipcodeincome$income <= 126846.2, "rich","veryrich")))
+
+zipcodeincome <- as.data.frame(zipcodeincome)
+colnames(zipcodeincome)[1] <- c("zipcode")
+
+data <- merge(data,zipcodeincome, by = "zipcode")
+
+
+## 수입에 따른 class를 더미변수로 생성
+library(fastDummies)
+results <- fastDummies::dummy_cols(data$class)
+
+data <- cbind(data, results)
+head(data)
+data$class <- NULL
+data$zipcode <- NULL
+data$income <- NULL
+data$.data <- NULL
+colnames(data)
+```
+
+
+
+####  **부동산 지역별 가격 분포도**
+
+```{r 25, echo=TRUE}
+# library(shiny)
+# library(leaflet)
+# library(RColorBrewer)
+# 
+# data1 <- read.csv("kc_house_data.csv")
+# coords <- data1[,c("price", "lat", "long")]
+# 
+# ui <- bootstrapPage(
+#     tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
+#     leafletOutput("map", width = "100%", height = "100%"),
+#     absolutePanel(top = 10, right = 10,
+#                   sliderInput("range", "Price", min(coords$price), max(coords$price),
+#                               value = range(coords$price), step = 100000
+#                   ),
+#                   selectInput("colors", "Color Scheme",
+#                               rownames(subset(brewer.pal.info, category %in% c("seq", "div")))
+#                   ),
+#                   checkboxInput("legend", "Show legend", TRUE)
+#     )
+# )
+# 
+# server <- function(input, output, session) {
+# 
+#     # Reactive expression for the data subsetted to what the user selected
+#     filteredData <- reactive({
+#         coords[coords$price >= input$range[1] & coords$price <= input$range[2],]
+#     })
+# 
+#     # This reactive expression represents the palette function,
+#     # which changes as the user makes selections in UI.
+#     colorpal <- reactive({
+#         colorNumeric(input$colors, coords$price)
+#     })
+# 
+#     output$map <- renderLeaflet({
+#         # Use leaflet() here, and only include aspects of the map that
+#         # won't need to change dynamically (at least, not unless the
+#         # entire map is being torn down and recreated).
+#         leaflet(coords) %>% addTiles() %>%
+#             fitBounds(~min(long), ~min(lat), ~max(long), ~max(lat))
+#     })
+# 
+#     # Incremental changes to the map (in this case, replacing the
+#     # circles when a new color is chosen) should be performed in
+#     # an observer. Each independent set of things that can change
+#     # should be managed in its own observer.
+#     observe({
+#         pal <- colorpal()
+# 
+#         leafletProxy("map", data = filteredData()) %>%
+#             clearShapes() %>%
+#             addCircles(radius = ~price/10000, weight = 1, color = "#777777",
+#                        fillColor = ~pal(price), fillOpacity = 0.7, popup = ~paste(price)
+#             )
+#     })
+# 
+#     # Use a separate observer to recreate the legend as needed.
+#     observe({
+#         proxy <- leafletProxy("map", data = coords)
+# 
+#         # Remove any existing legend, and only if the legend is
+#         # enabled, create a new one.
+#         proxy %>% clearControls()
+#         if (input$legend) {
+#             pal <- colorpal()
+#             proxy %>% addLegend(position = "bottomright",
+#                                 pal = pal, values = ~price
+#             )
+#         }
+#     })
+# }
+# 
+#  shinyApp(ui, server)
+
+
+```
+
+<br>
+<br>
+<br>
+
+---
+
+### 3-2. 데이터 분할
+```{r 26, echo=TRUE}
+# 데이터 분할
+# test, train 셋으로 나누기
+set.seed(12345)
+data.index <- caret::createDataPartition(data$price, p = 0.7)
+data.train <- data[unlist(data.index) , ]
+data.test  <- data[-unlist(data.index) ,]
+
+```
+
+
+
+### 3-3. 모델 검정
+
+```{r 27, echo=TRUE}
+# 5. 다중 회귀분석 (Multiple Regression)
+# i. 회귀분석과 변수선택 실시 ( 다중공선성 확인 / 잔차분석 )
+# ii. 결과확인
+# iii. 모델해석
+# iv.모델 검정
+colnames(data)
+
+
+# 첫번쨰 모델 : 상관계수가 0.3이 넘으며 각 집단의 표본이 고루 분포되어 있는 독립변수 사용하였으며, 자체적으로 생산한 더미변수 
+housesales.lm <- lm(price ~ bedrooms + bathrooms + sqft_living + 
+                      floors + waterfront + view + grade + lat + 
+                      .data_middle + .data_rich + .data_veryrich, data= data.train)
+
+
+```
+
+
+
+
+```{r 28, echo=FALSE}
+
+summary(housesales.lm)
+```
+> 하지만 상관계수가 가장 높았던 화장실과 침실의 수, 층 수는 오히려 유의수준 0.05에서 통계적으로 유의확률이 높게 계산됨. (집 면적이 화장실과 침실 및 층수에 비례하기 때문이 아닐까 추측)
+
+
+
+```{r 29, echo=TRUE}
+# 다중공산성 확인
+library(car)
+vif(housesales.lm)
+```
+
+```{r 30, echo=TRUE}
+# 또한 단계선택방법에서도 floors, bedrooms, bathrooms는 제외됨. 
+housesales.ssm <- step(housesales.lm, direction = "both")
+```
+
+```{r 31, echo=TRUE}
+# 두번째 모델(첫번째 모델에서 유의확률이 높은 변수들 제거)
+housesales.lm.final <- lm(price ~ bathrooms + sqft_living
+                          + waterfront + view + grade + lat + .data_middle + .data_rich + .data_veryrich, data = data.train)
+summary(housesales.lm.final)
+
+# 다중공산성 4이하 
+vif(housesales.lm.final)
+
+# 점진소거법 만족
+housesales.ssm <- step(housesales.lm.final, direction = "both")
+
+
+# 독립변수들의 영향력 확인
+library(lm.beta)
+lm.beta(housesales.lm.final)
+```
+
+
+## **4. 검증 **
+
+```{r 32, echo=TRUE}
+# 1. 잔차의 정규성 가정
+library(nortest)
+ad.test(housesales.lm.final$residuals)
+
+# 잔차의 정규성은 유의수준 0.05에서 2.2e-16으로 만족하지 않는다. 
+
+```
+
+```{r 33, echo=TRUE}
+# 2. 독립성 가정
+car::durbinWatsonTest(housesales.lm.final)
+
+# 오차항의 독립성을 평가하는 한 측도로 더빈-왓슨(Durbin-Watson) 통계량 사용
+# DW 통계량은 잔차들의 상관계수를 측정함
+# p-value가 0.676으로 유의수준 0.05보다 크다.
+# 귀무가설: 각 오차들은 독립이며, 독립성 조건을 만족함. 
+```
+
+
+```{r 34, echo=TRUE}
+# 3. 등분산성 검정
+car::ncvTest(housesales.lm.final)
+
+# Chisquare = 370.1031    Df = 1     p = 1.777212e-82 
+# 분산이 고르지 않음음. 
+```
+
+```{r 35, echo=TRUE}
+# 4. 에러에 대한 전반적인 가정에 검정.
+summary(gvlma::gvlma(housesales.lm.final))
+```
+
+```{r 36, echo=TRUE}
+# 예측
+data.predict <- predict(housesales.lm.final, newdata = data.test)
+
+hist(data.predict, breaks = seq(from =11, to = 17, by=0.5))
+
+```
+
+```{r 37, echo=TRUE}
+hist(data.test$price, breaks = seq(from=11, to=16, by=0.5))
+```
+
+```{r 38, echo=TRUE}
+summary(housesales.lm.final)
+
+```
+
+<br>
+
+---
+
+
+
+> **자료 해석**
+>
+> * 1단계 : 회귀모형은 타당한가? 
+> H0 : 귀무가설 : 회귀모형은 타당하지 않다.
+> H1 : 대립가설 : 회귀모형은 타당하다.
+> F-statistic:  5025 on 9 and 15121 DF,  p-value: < 2.2e-16 (***)
+> 결론 : 유의확률이 0.000이므로 유의수준 0.05에서 회귀모형은 통계적으로 타당하다. 
+>
+> * 2단계 : 독립변수는 종속변수에게 어떤 영향을 주는가?
+> H0 : 귀무가설 : 독립변수는 종속변수에게 영향을 주지 않는다. (beta1 = 0)
+> H1 : 대립가설 : 독립변수는 종속변수에게 영향을 준다. (beta != 0)
+> 결론 : 유의확률은 0.000이므로 유의수준 0.05에서 모형에 포함된 독립변수들은 종속변수에 모두 통계적으로 유의한 영향을 주는 것으로 나타남.
+>
+> * 3단계 : 독립변수는 어떠한 영향을 주는가?
+> 1. sqft_living이 1제곱미터 증가할 경우 가격은 0.000196 증가
+> 2. 조망 방향이 증가할 경우 가격은 0.101503998 증가
+> 3. 집의 점수가 1 증가할 경우 0.132 증가
+> 4. 위도가 1 증가할 경우 1.314 
+> 5. 중위 수입 기준 상위 70%~30% 동네 살고 있을 경우 0.086 증가
+> 6. 중위 수입 기준 상위 30%~10% 동네 살고 있을 경우 0.224 증가
+> 7. 중위 수입 기준 상위 10% 동네 살고 있을 경우 0.178 증가
+
+## 4단계 : 회귀모형의 설명력 = 독립변수의 설명력
+### Adjusted R-squared = 0.7493 (약75%)
+### 즉, 독립변수들이 종속변수를 75%설명하고 있다. 
+
